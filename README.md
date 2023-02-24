@@ -1,5 +1,5 @@
 # SRM-wireguard-cross-compile
-Wireguard für Synology Router cross kompilieren
+Wireguard für Synology Router RT6600ax cross kompilieren
 
 Am besten eine Linux-VM verwenden oder notfalls ein installiertes Linux
 
@@ -81,7 +81,7 @@ von
 
 ```
 
-zu
+nach
 
 ```
 
@@ -147,7 +147,7 @@ chroot ds.cypress-7.2
 
 ==============
 
-# (Optonal) Test des Crosscompilers
+# (Optional) Test des Crosscompilers
 
 In einem neuen Terminal (ohne chroot) im Verzeichnis ```/toolkit/build_env/ds.cypress-7.2/tmp``` folgende Dateien erstellen:
 
