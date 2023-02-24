@@ -78,3 +78,7 @@ z.B. meine-dynamische-ip:47111
 ```
 
 Speichern und ausprobieren.
+
+--------------------
+
+TODO: Daten persistent speichern. Momentan sind nach einem Routerneustart die Infos weg
