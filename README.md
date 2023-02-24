@@ -1,6 +1,8 @@
 # SRM-wireguard-cross-compile
 Wireguard für Synology Router RT6600ax cross kompilieren
 
+Vielleicht mag die Beschreibung umständlich erscheinen, aber ich habe das auch das erste Mal gemacht. Verbesserungen sind willkommen.
+
 Am besten eine Linux-VM verwenden oder notfalls ein installiertes Linux
 
 ```
@@ -248,4 +250,4 @@ CHROOT@cypress-build[/tmp/wireguard-tools/src]# make
 
 Einfach auf den Router kopieren und Konfigurieren.
 
-Zur Konfiguration siehe Teil2 (TODO)
+Zur Konfiguration siehe [Teil 2](README_CONFIG.md)
