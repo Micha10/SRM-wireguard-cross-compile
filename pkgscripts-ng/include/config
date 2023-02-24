@@ -1,0 +1,13 @@
+#!/bin/bash
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+if [ -z "$__INCLUDE_CONFIG__" ]; then
+__INCLUDE_CONFIG__=defined
+
+. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"/init
+
+Source include/variable
+Source include/projects
+
+fi # header guard
+# vim:ft=sh

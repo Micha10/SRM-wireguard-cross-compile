@@ -1,0 +1,142 @@
+#!/bin/bash
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+if [ -z "$__INCLUDE_APPLY_ENV__" ]; then
+__INCLUDE_APPLY_ENV__=defined
+
+Source include/check
+
+_CreateWrapLink() {
+        local target="$1"
+        shift
+        for bin in "$@"; do
+                [ -z "$bin" ] && continue
+                ln -fs "$target" "$bin"
+        done
+}
+
+_AssignArch() {
+	eval $1=\$$1$2
+}
+
+_ApplyEnvDir() {
+	[ "$1" = "build" ] && SynoDir="/usr"
+	[ "$1" = "install" ] && SynoDir="/usr/syno"
+	SynoLibDir="$SynoDir/lib"
+	SynoBinDir="$SynoDir/bin"
+	SynoIncludeDir="$SynoDir/include"
+	SynoShareDir="$SynoDir/share"
+	SynoPluginDir="$SynoDir/plugin"
+	LibDir="/usr/lib"
+	BinDir="/usr/bin"
+	IncludeDir="/usr/include"
+	Prefix="/usr"
+	ShareDir="/usr/share"
+	SysRootPrefix="${ToolChainSysRoot}/usr"
+	SysRootInclude="${ToolChainSysRoot}/usr/include"
+	SysRootLib="${ToolChainSysRoot}/usr/lib"
+	SysRootBin="${ToolChainSysRoot}/usr/bin"
+	CROSS_COMPILE="$ToolChainPrefix"
+	KERNEL_SEARCH_PATH="$SysRootLib/modules/$PRODUCT-$DSM_SHLIB_MAJOR.$DSM_SHLIB_MINOR/build"
+	KSP="$KERNEL_SEARCH_PATH"
+	KSRC="$KERNEL_SEARCH_PATH"
+	KDIR="$KERNEL_SEARCH_PATH"
+}
+
+_ApplyBuildFlag() {
+	local arch="$1"
+
+	_AssignArch "ToolChainDir" $arch
+	_AssignArch "ToolChainPrefix" $arch
+	_AssignArch "ToolChainBin" $arch
+	_AssignArch "ToolChainInclude" $arch
+	_AssignArch "ToolChainSysInclude" $arch
+	_AssignArch "ToolChainSysRoot" $arch
+	_AssignArch "ToolChainLib" $arch
+
+	_AssignArch "ConfigOpt" $arch
+	_AssignArch "HOST" $arch
+
+	_AssignArch "CC" $arch
+	_AssignArch "CXX" $arch
+	_AssignArch "LD" $arch
+	_AssignArch "AR" $arch
+
+	eval "STRIP_ORI=\$STRIP$arch"
+	SSTRIP="/usr/syno/bin/sstrip"
+
+	_AssignArch "RANLIB" $arch
+	_AssignArch "CFLAGS" $arch
+	_AssignArch "LDFLAGS" $arch
+	_AssignArch "NM" $arch
+	_AssignArch "READELF" $arch
+
+	#For Grub in EFI framework
+	_AssignArch "GrubHOST" $arch
+	_AssignArch "GrubToolChainDir" $arch
+	_AssignArch "GrubToolChainPrefix" $arch
+	_AssignArch "GrubToolChainBin" $arch
+	_AssignArch "GrubToolChainInclude" $arch
+	_AssignArch "GrubToolChainSysInclude" $arch
+	_AssignArch "GrubToolChainLib" $arch
+	_AssignArch "GrubConfigOpt" $arch
+	_AssignArch "GrubCFLAGS" $arch
+	_AssignArch "GrubLDFLAGS" $arch
+	_AssignArch "GrubCC" $arch
+	_AssignArch "GrubCXX" $arch
+	_AssignArch "GrubLD" $arch
+	_AssignArch "GrubAR" $arch
+	_AssignArch "GrubSTRIP" $arch
+	_AssignArch "GrubRANLIB" $arch
+	_AssignArch "GrubNM" $arch
+}
+
+ApplyBuildEnv() {
+	local arch="$1"
+	local proj="$2"
+
+	_ApplyBuildFlag "${arch}"
+	_ApplyEnvDir "build"
+
+	export PATH="/bin:/sbin:/usr/bin:/usr/syno/bin:${SysRootBin}"
+	export BUILD_ARCH=$arch
+
+	if [ "$WithDebug" = "Yes" ]; then
+		SYNO_XTRACFLAGS="$SYNO_XTRACFLAGS -DSYNO_DEBUG_BUILD"
+	fi
+	[ -z "$SYNO_XTRACFLAGS" ] && SYNO_XTRACFLAGS="-g"
+
+	_CreateWrapLink "${ScriptsDir}/SynoCC" \
+		"${CC}" "${CXX}" \
+		"${GrubCC}" "${GrubCXX}"
+
+	CFLAGS="$CFLAGS -DBUILD_ARCH=${arch} -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64"
+	if [ -n "$SYNO_XTRACFLAGS" ]; then
+		CFLAGS="${CFLAGS} ${SYNO_XTRACFLAGS}"
+	fi
+
+	InstallDevLayout="prefix=/usr PREFIX=/usr libdir=/usr/lib LIBDIR=/usr/lib bindir=/usr/bin BINDIR=/usr/bin includedir=/usr/include INCLUDEDIR=/usr/include DESTDIR=${DebDevDir} FILESDIR=${DebFilesRootDir}/${proj} SYNODOCDIR=/usr/include/synodoc"
+
+	CFLAGS="$CFLAGS $PLAT_FLAGS -DSYNO_PLATFORM=${BUILD_TARGET}"
+	CXXFLAGS="${CFLAGS} ${CXXSTANDARD}"
+	GOROOT="/usr/lib/go"
+}
+
+ApplyInstallEnv() {
+	local InstallArch="$1"
+	local proj="$2"
+
+	export BUILD_ARCH="${InstallArch}"
+	_ApplyBuildFlag "${InstallArch}"
+	_ApplyEnvDir "install"
+	export PATH="/bin:/sbin:/usr/bin:/usr/syno/bin:${SysRootBin}"
+
+	SynoInstallLayout="prefix=/usr/syno PREFIX=/usr/syno libdir=/usr/lib LIBDIR=/usr/lib bindir=/usr/syno/bin BINDIR=/usr/syno/bin includedir=/usr/syno/include INCLUDEDIR=/usr/syno/include FILESDIR=${FilesDir}/${proj} PLUGINDIR=${SynoPluginDir} DESTDIR=${TmpInstDir}"
+
+	CFLAGS="$CFLAGS $PLAT_FLAGS -DSYNO_PLATFORM=${BUILD_TARGET}"
+	CXXFLAGS="${CFLAGS} ${CXXSTANDARD}"
+	GOROOT="/usr/lib/go"
+}
+
+fi
+# vim:ft=sh

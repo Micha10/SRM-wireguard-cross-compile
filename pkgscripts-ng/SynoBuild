@@ -1,0 +1,183 @@
+#!/bin/bash
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+LANG=""
+LC_ALL=""
+. $(dirname `readlink -f "$0"`)/include/init
+
+Usage() {
+	cat << EOF
+
+Usage
+	`basename $0` [OPTIONS] project_name+
+
+Synopsis
+	Build projects.
+
+Options
+	-p, --platform {platform}
+		Specify target platform.
+	-c, --clean, --dontask
+		Cleanup before building.
+	-C, --cleanonly
+		Cleanup only and exit.
+	-j, --jobs {num}
+		Specify how many jobs to build in parallel. Default is numb of CPUs.
+	-J	Disable parallel build.
+	-S	Disable silent make.
+	--parallel {N}
+		parallel build projects with N parallel job.
+	-x {level}
+		Build all dependant projects. Can specify level of dependency.
+		Expand project dependency list, and build them in turn.
+		Cannot be used with -r and default value is 0.
+		For example, -x3 means to traverse dependency to 3rd level (itself as level 0)
+	-r {level}
+		Expand project dependency list reversely, then build all depending projects.
+	-d, --with-debug
+		Build with debugging definition.
+	-N, --noclean
+		Do not cleanup before building.
+	--no-builtin
+		Do not skip built-in projects.
+	--with-ccache {size}
+		Set size of ccache to reduce compiler activities. Default is $DefaultCCacheSize.
+	--with-clean-ccache
+		Build with a cleared ccache.
+	--min-sdk {version}
+		Specify minimum required SDK version (for example, 4.0).
+	-h, --help
+		This help message.
+
+EOF
+}
+
+GetBaseSDKVersion() {
+	local bringupMajor=
+	local bringupMinor=
+
+	if [ -n "$BRINGUP_VERSION" ]; then
+		bringupMajor=$(echo $BRINGUP_VERSION | cut -d. -f1)
+		bringupMinor=$(echo $BRINGUP_VERSION | cut -d. -f2)
+		if [ -n "$bringupMajor" -a -n "$bringupMinor" -a "$bringupMajor" = "$DSM_SHLIB_MAJOR" ]; then
+			echo "$BRINGUP_VERSION"
+		fi
+	fi
+
+	echo "$DSM_SHLIB_MAJOR.0"
+}
+
+AppendSynoXtraCflags(){
+	local baseSDKVersion=$(GetBaseSDKVersion)
+	SYNO_XTRACFLAGS="-g"
+	SYNO_XTRACFLAGS="$SYNO_XTRACFLAGS -D`ResolveMinSdkMacro ${MinSdkVersion:-$baseSDKVersion}`"
+}
+
+Source "include/config"
+Source "include/build"
+
+DoBuild() {
+	local ThisProj=$1
+	local logFile="$LogDir/${ThisProj}.build"
+	[ -f "$logFile" ] && mv -f $logFile $logFile.old
+
+	(
+		INFO "Start to build ${ThisProj}."
+		Date0=`date +%s`
+		SetupBuildProjEnv $ThisProj
+		BuildProject $ThisProj
+		Date1=`date +%s`
+		ShowTimeCost $Date0 $Date1 "Build-->$ThisProj"
+		INFO "Build ${ThisProj} finished!"
+
+	) &> >(tee $logFile)
+}
+
+ParallelBuildProjects() {
+	local projects=$@
+	local pickle="/tmp/$$.pickle"
+	local buildProjs failedProjs successProjs blockedList logFile blockedProjs
+
+	if [ -z "$projects" ]; then
+		echo "No projects input."
+		return 0
+	fi
+
+	echo "${ScriptsDir}/ProjectDepends.py --dump $pickle ${DEP_OPT} ${BUILD_DEP_LEVEL} -p ${PLATFORM_ABBR} $projects"
+	${ScriptsDir}/ProjectDepends.py --dump $pickle ${DEP_OPT} ${BUILD_DEP_LEVEL} -p "${PLATFORM_ABBR}" $projects
+	echo "${ScriptsDir}/ParallelProjects.py --init $pickle ${DEP_OPT} $projects"
+	${ScriptsDir}/ParallelProjects.py --init $pickle ${DEP_OPT} $projects
+
+	while true; do
+		buildProjs=$(${ScriptsDir}/ParallelProjects.py --next -c "$ProcessCount" $successProjs)
+		if [ "NULL" = "$buildProjs" ]; then
+			echo "Done."
+			break
+		fi
+
+		for ThisProj in $buildProjs; do
+			DoBuild $ThisProj >/dev/null &
+			echo "[Building] $ThisProj"
+		done
+		wait
+
+		successProjs=
+		failedProjs=
+		for proj in $buildProjs; do
+			if CheckProjectStatus build $proj > /dev/null; then
+				successProjs="$successProjs $proj"
+				echo "[Success] $proj"
+			else
+				failedProjs="$failedProjs $proj"
+				echo "[Failed] $proj"
+			fi
+		done
+
+		if [ -n "$failedProjs" ]; then
+			blockedList=$(${ScriptsDir}/ParallelProjects.py --failed $failedProjs)
+			for block in $blockedList; do
+				proj=$(echo $block | cut -d: -f1)
+				blockedProjs=$(echo $block | cut -d: -f2 | sed 's/,/ /g')
+				for blockProj in $blockedProjs; do
+					logFile="$LogDir/${blockProj}.build"
+					[ -f "$logFile" ] && mv -f $logFile ${logFile}.old
+					echo "[Blocked] $blockProj is blocked due to $proj build failed." | tee $logFile
+				done
+			done
+		fi
+	done
+
+	${ScriptsDir}/ParallelProjects.py --purge
+	rm $pickle
+}
+
+main() {
+	local projectList=
+	local logFile=
+
+	CheckPermission
+	ParseArgs "$@"
+
+	# Setup build environment
+	SetupBuildEnv AppendSynoXtraCflags
+
+	projectList=$(GetBuildProjList)
+
+	INFO "projectList=\"$projectList\""
+
+	if $Parallel && [ "$(wc -w <<< "$projectList")" -gt 1 ]; then
+		ParallelBuildProjects ${projectList}
+	else
+		for ThisProj in $projectList; do
+			DoBuild "$ThisProj"
+		done
+	fi
+
+	CheckTimeCostLog build $projectList
+	if ! CheckErrorLog build $projectList; then
+		return 1
+	fi
+	return 0
+}
+
+main "$@"

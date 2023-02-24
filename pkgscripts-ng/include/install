@@ -1,0 +1,260 @@
+#!/bin/bash
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+if [ -z "$__INCLUDE_INSTALL__" ]; then
+__INCLUDE_INSTALL__=defined
+
+Source include/config
+Source include/check
+Source include/platforms
+
+Source include/virtualProject
+Source include/applyEnv
+BUILD_TARGET=""
+
+PlatformOpts=`AllPlatformOptionsComma`
+DefaultLongArgs="${PlatformOpts}platform:,with-debug,help,parallel:"
+DefaultArgs="dhp:T"
+IsDebugBuild="N"
+DebType="bin"
+Parallel=false
+ProcessCount=8
+
+ParseDefaultInstallArgs(){
+UnHandledOpt=
+while [ -n $1 ]; do
+	IsPlatformOption $1
+	if [ $? -eq 0 ]; then
+		AskPlatform $1
+	else
+		case "$1" in
+		# platforms
+		"-p" | "--platform")
+			AskPlatform "--$2"
+			shift
+			;;
+		"-d" | "--with-debug")
+			export NOSTRIP="NOSTRIP"
+			IsDebugBuild="Y"
+			;;
+		"--parallel")
+			Parallel=true
+			ProcessCount=$2
+			shift
+			;;
+		"--help" | "-h")
+			Usage
+			exit 0
+			;;
+		"--")
+			# remaining are project names
+			shift
+			break
+			;;
+		*)
+			[ -n "$UnHandledOpt" ] && UnHandledOpt="$UnHandledOpt $1" || UnHandledOpt="$1"
+			shift
+			if [ "$1" = '--' ]; then
+				shift
+				break
+			elif [[ "$1" =~ "-" ]]; then
+				continue
+			else
+				UnHandledOpt="$UnHandledOpt $1"
+			fi
+			;;
+		esac
+	fi
+	shift
+done
+
+InputProjs=$@
+
+if [ -z "$BUILD_OPT" ]; then
+	# call again without parameters
+	# to prompt user interactively
+	AskPlatform
+fi
+}
+
+_MVDIR() {
+	local SOURCE="$1"
+	local DEST="$2"
+
+	[ ! -d "$TmpInstDir/$SOURCE" ] && return
+
+	if [ -n "$(ls --almost-all "$TmpInstDir/$SOURCE")" ]; then
+		echo "Move files from $SOURCE to $DEST"
+		mkdir --parents "$TmpInstDir/$DEST"
+		mv --no-clobber "$TmpInstDir/$SOURCE"/* "$TmpInstDir/$DEST"
+		rmdir "$TmpInstDir/$SOURCE" || echo "Error"
+	fi
+}
+
+NormailizeTarballFHS() {
+	local proj=$1
+	NormailizeLIB ${proj}
+	NormailizeBIN ${proj}
+	NormailizeSBIN ${proj}
+}
+
+NormailizeLIB() {
+	_MVDIR "/usr/lib64" "/usr/lib"
+	_MVDIR "/lib64" "/usr/lib"
+	_MVDIR "/lib" "/usr/lib"
+}
+
+NormailizeBIN() {
+	_MVDIR "/bin" "/usr/bin"
+}
+
+NormailizeSBIN() {
+	_MVDIR "/sbin" "/usr/sbin"
+}
+
+SetupInstallEnv(){
+	local debugBuild=$1
+
+	SetupDSMBuildNumber
+	LoadPlatformRelated || exit 1
+
+	if [ "Y" = "$debugBuild" ]; then
+		TarBallDir=$DebugTarBallDir
+		DebType="debug"
+	fi
+
+	mkdir -p ${TarBallDir} $LogDir $TmpInstDir
+	[ -d "$DebPkgDir" ] || mkdir -p $DebPkgDir
+}
+
+NormalizeInstallProjects() {
+	local projectList=
+
+	for proj in $@; do
+		projectList="${projectList} `basename ${proj}`"
+	done
+
+	if ! projectList=$(${ScriptsDir}/ProjectDepends.py -p "${PLATFORM_ABBR}" ${projectList}) ; then
+		CheckErrorOut 1 "Failed to get dependency list !!"
+	fi
+
+	echo $projectList
+}
+
+InstallProject() {
+	local proj=$1
+	local baseProj="`GetVirInstProjectName ${proj}`"
+	local installScript=
+
+	cd $SourceDir/$baseProj
+	CheckErrorOut $? "Failed to cd $SourceDir/$baseProj"
+	if ! installScript=$(findInstallScript "${proj}"); then
+		ERROR "There is no install scripts for $proj"
+		return 1
+	fi
+
+	INFO "Execute install script: $installScript"
+	(
+		. $installScript
+	)
+
+	CheckProjectStatus install $proj > /dev/null
+
+	return $?
+}
+
+
+SetupTmpInstDir() {
+	local proj=$1
+	TmpInstDir="/tmp/_install_${proj}"
+	rm -rf "$TmpInstDir"
+	mkdir -p "$TmpInstDir"
+}
+
+SetupProjInstallEnv() {
+	local proj=$1
+
+	if Is64BitProject "${proj}"; then
+		INFO "ENV" "Using 64bit environment."
+		ApplyInstallEnv "64" "$proj"
+	else
+		INFO "ENV" "Using 32bit environment."
+		ApplyInstallEnv "32" "$proj"
+	fi
+}
+
+CheckTarballExist() {
+	local proj=$1
+	local tarball=${proj}.tgz
+
+	if [ ! -f "$TarBallDir/$tarball" ] && CheckInList "$proj" "$PlatformAppList"; then
+		ERROR "No such file $TarBallDir/$tarball"
+	fi
+}
+
+CreateTarball() {
+	local proj=$1
+	local haveFile=`ls $TmpInstDir`
+
+	if [ ! -z "$haveFile" ]; then
+		echo "Create ${proj}.tgz ..."
+		( cd "$TmpInstDir"; XZ_OPT=-3 tar cJpf "$TarBallDir/${proj}.tgz" * )
+		echo "Done"
+	else
+		INFO "WARNING" "$TmpInstDir is empty!"
+	fi
+
+}
+
+InstallPreparePkgDir() # $1: Target Dir $2: Dir list
+{
+	TargetDir="$1"
+	for dirmode in $2
+	do
+		DIR=`echo ${dirmode} | cut -f1 -d':'`
+		MODE=`echo ${dirmode} | cut -f2 -d':' -s`
+		if [ -n "${MODE}" ]; then
+			MODE_ARG="-m ${MODE}"
+		fi
+		echo "mkdir -p ${MODE_ARG} $TargetDir/${DIR}"
+		mkdir -p ${MODE_ARG} $TargetDir/${DIR}
+	done
+}
+
+InstallPkgFiles() # $1: Target Dir $2: Path $3: Default mode $4: FileList
+{
+	PrefixDir="$1/$2"
+	DefMode="$3"
+	[ -n "$4" ] && mkdir -p "${PrefixDir}"
+	for file in $4
+	do
+		FileBase=$(echo "$file" | cut -f1 -d':')
+		FileDS=$(echo "$file" | cut -f2 -d':' -s)
+		if [ -z "$FileDS" ]; then
+		    FileInst="$PrefixDir/$FileDS/$(basename "$FileBase")"
+		else
+		    FileInst="$PrefixDir/$FileDS"
+		fi
+
+		if [ ! -f "$FileBase" ]; then
+			echo "Error: $FileBase not found!"
+			continue
+		fi
+
+		install -vm "$DefMode" "$FileBase" "$FileInst" | grep -- "->"
+		RetInstall=$?
+		if [ $RetInstall -ne 0 ]; then
+			echo "Error: [install -vm $DefMode $FileBase $FileInst], ret=$RetInstall"
+			continue
+		fi
+
+		file "${FileInst}" | grep ELF > /dev/null 2>&1
+		if [ $? -eq 0 -a "x$NOSTRIP" != "xNOSTRIP" ]; then
+			echo "Striping ${FileInst}"
+			${STRIP} -s --remove-section=.note --remove-section=.comment "$FileInst"
+		fi
+	done
+}
+
+fi
+# vim: ft=sh

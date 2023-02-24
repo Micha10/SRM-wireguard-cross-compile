@@ -1,0 +1,17 @@
+#!/bin/bash
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+if [ -z "$__INCLUDE_PROJECTS__" ]; then
+__INCLUDE_PROJECTS__=defined
+
+# Built-in projects in environment
+# Built-in but will not build, because PreBuildProject may compatible with it.
+BuiltinProjects="
+"
+
+# Projects that fail to build in parallel
+SeqProjs="
+	"
+
+fi
+# vim:ft=sh

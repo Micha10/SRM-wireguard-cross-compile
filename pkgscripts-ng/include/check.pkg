@@ -1,0 +1,19 @@
+#!/bin/bash
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+if [ -z "$__INCLUDE_CHECK_PKG__" ]; then
+__INCLUDE_CHECK_PKG__=defined
+
+ResolveMinSdkMacro() {
+	[ $# -ne 1 ] && CheckErrorOut 1 "Wrong number of parameters to $FUNCNAME()."
+	[[ $1 =~ ^[0-9]+\.[0-9]+$ ]] || CheckErrorOut 1 "Invalid SDK version \"$1\""
+	local major="`echo $1 | cut -d'.' -f1`"
+	local minor="`echo $1 | cut -d'.' -f2`"
+	echo "SDK_VER_MIN_REQUIRED=$((${major}*100+${minor}))"
+}
+
+[ "$(caller)" != "0 NULL" ] && return 0
+`$@`
+
+fi
+# vim:ft=sh

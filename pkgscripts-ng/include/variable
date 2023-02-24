@@ -1,0 +1,32 @@
+#!/bin/bash
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+# The variable in this file will be shared between lnxscripts and pkgscripts
+# If you variable only use for lnxscripts, please add it to include/variable.lnx
+# If you variable only use for pkgscripts, please add it to include/variable.pkg
+
+if [ -z "$__INCLUDE_VARIABLE__" ]; then
+__INCLUDE_VARIABLE__=defined
+
+# Directory for scripts
+ConfDir="SynoBuildConf"
+
+# Directory for all compile logs
+LogDir="/logs"
+
+# We will install to $TmpInstDir dir and make a tgz file to $TarBallDir
+ImageDir="/image"
+TarBallDir="${ImageDir}/tarballs"
+DebugTarBallDir="${ImageDir}/synodebug"
+TmpInstDir="/tmp/_install"
+
+DebDir="/deb"
+DebDevBuild="${DebDir}/build"
+DebDevDir="${DebDir}/tmpInstallDir"
+DebPkgDir="${DebDir}/result"
+
+DEFAULT_CCACHE_SIZE="8G"
+PRODUCT="DSM"
+
+fi # header guard
+# vim:ft=sh

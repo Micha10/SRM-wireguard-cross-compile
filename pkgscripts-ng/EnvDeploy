@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+# Copyright (c) 2000-2020 Synology Inc. All rights reserved.
+
+import argparse
+import sys
+import os
+import subprocess
+import logging
+
+sys.path.append(os.path.realpath(os.path.dirname(__file__)) + "/include/python")
+import BuildEnv
+from pkgdeploy import (EnvDeployError, filter_platforms,
+                       ChrootToolkit, DownloadDir, set_log)
+
+set_log('envdeploy.log')
+
+
+def parse_args(argv):
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('-v', '--version', dest='version',
+                           help='Deploy toolkit version (e.g., 6.2), default is latest version.')
+    argparser.add_argument('-C', '--noclear', action='store_true', default=False,
+                           help='Not clear chroot before deploy.')
+    argparser.add_argument('-t', '--tarball', dest='local_tarball',
+                           default=None, help='Use local tarball dir. Imply -D')
+    argparser.add_argument(
+        '-s', '--suffix', help='Assign build_env suffix, ex build_env-demo.')
+    argparser.add_argument('-q', '--quiet', action='store_true',
+                           help="Don't display download status bar.")
+    argparser.add_argument('-l', '--list', action="store_true",
+                           default=False, help='List available platforms.')
+    argparser.add_argument('-p', dest='platforms',
+                           default="", help='Deploy platforms.')
+    argparser.add_argument('-b', '--branch', default="",
+                           help='Package branch for customize environment.')
+    argparser.add_argument('-c', '--clear-only',
+                           action='store_true', help='Only clear environment')
+    argparser.add_argument('-D', '--no-download', dest="download",
+                           action="store_false", help="Do not download.")
+
+    args = argparser.parse_args(argv)
+    args.platforms = list(set(args.platforms.split()))
+
+    if args.local_tarball:
+        args.download = False
+
+    if not args.version:
+        args.version = BuildEnv.getIncludeVariable('toolkit.config', 'LatestVersion')
+
+    args.platforms = filter_platforms(args.version, args.platforms)
+
+    return args
+
+
+def main(argv):
+    args = parse_args(argv)
+    if args.list:
+        logging.info("Available platforms: " + " ".join(args.platforms))
+        return
+
+    tarball_root = args.local_tarball if args.local_tarball else DownloadDir
+    toolkit = ChrootToolkit(
+        args.version, args.platforms, args.suffix, tarball_root)
+
+    toolkit.clean()
+    if args.clear_only:
+        return
+    if args.download:
+        toolkit.download(args.quiet)
+
+    toolkit.deploy()
+    logging.info("All task finished.")
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except EnvDeployError as e:
+        logging.error(type(e).__name__)
+        logging.error(str(e))
+        logging.error(" ".join(sys.argv) + " failed!")
+        sys.exit(1)

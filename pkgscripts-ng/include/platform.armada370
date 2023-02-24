@@ -1,0 +1,32 @@
+ToolChainDir32="/usr/local/arm-unknown-linux-gnueabi"
+ToolChainPrefix32="${ToolChainDir32}/bin/arm-unknown-linux-gnueabi-"
+ToolChainBin32="${ToolChainDir32}/bin"
+ToolChainSysRoot32="${ToolChainDir32}/arm-unknown-linux-gnueabi/sysroot"
+ToolChainInclude32="${ToolChainSysRoot32}/usr/include"
+ToolChainLib32="${ToolChainSysRoot32}/lib"
+ARCH="arm"
+PLATFORM_FAMILY="SYNOPLAT_F_ARMV7"
+
+ConfigOpt32="--host=armle-unknown-linux --target=armle-unknown-linux --build=i686-pc-linux"
+
+# For sdk usbcam
+HOST32=arm-unknown-linux-gnueabi
+
+PLAT_FLAGS="-DSYNO_MARVELL_ARMADA370"
+CFLAGS32="-mfloat-abi=hard -march=armv7-a+mp+sec -mtune=marvell-pj4 -mcpu=marvell-pj4 -mfpu=vfpv3-d16 -D$PLATFORM_FAMILY -O2 -fno-diagnostics-show-caret -Wno-unused-local-typedefs"
+LDFLAGS32=""
+CC32=${ToolChainPrefix32}gcc
+CXX32=${ToolChainPrefix32}g++
+LD32=${ToolChainPrefix32}ld
+AR32=${ToolChainPrefix32}ar
+STRIP32=${ToolChainPrefix32}strip
+RANLIB32=${ToolChainPrefix32}ranlib
+NM32=${ToolChainPrefix32}nm
+READELF32=${ToolChainPrefix32}readelf
+
+KernelToolchain="gcc850_glibc226_hard"
+ToolchainTGZList="$KernelToolchain gcc445_glibc211_softfp_armada370"
+UBootToolchain="gcc445_glibc211_softfp_armada370"
+SynoKernelConfig="armada370"
+SynoGNUSources="armada370"
+QemuStatic="qemu-arm-static"
